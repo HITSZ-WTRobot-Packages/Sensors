@@ -56,11 +56,11 @@ public:
 
     void setOutputRate(RRate rate);
 
-    [[nodiscard]] const float& yaw() const
+    [[nodiscard]] const float& getYaw() const
     {
         return yaw_;
     }
-    [[nodiscard]] const float& wz() const
+    [[nodiscard]] const float& getWz() const
     {
         return wz_;
     }
