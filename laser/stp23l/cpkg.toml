@@ -1,0 +1,4 @@
+name = "STP23L"
+pkgname = "SensorLaser::STP23L"
+version = "0.1.0"
+dependencies = ["protocol::UartRxSync"]
