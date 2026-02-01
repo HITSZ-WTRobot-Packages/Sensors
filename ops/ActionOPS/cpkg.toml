@@ -1,0 +1,4 @@
+name = "ActionOPS"
+pkgname = "SensorOPS::ActionOPS"
+version = "0.1.0"
+dependencies = ["protocol::UartRxSync", "FreeRTOS"]
