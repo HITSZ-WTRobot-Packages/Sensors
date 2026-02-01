@@ -1,0 +1,4 @@
+name = "HWT101CT"
+pkgname = "SensorGyro::HWT101CT"
+version = "0.1.0"
+dependencies = ["protocol::UartRxSync", "utils"]
