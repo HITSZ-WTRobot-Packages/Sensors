@@ -1,0 +1,4 @@
+name = "DT35"
+pkgname = "SensorLaser::DT35"
+version = "0.1.0"
+dependencies = ["protocol::UartRxSync"]
