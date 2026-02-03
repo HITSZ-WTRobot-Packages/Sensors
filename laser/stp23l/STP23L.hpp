@@ -19,8 +19,13 @@ class STP23L final : public protocol::UartRxSync<4, 195>
 public:
     explicit STP23L(UART_HandleTypeDef* huart) : UartRxSync(huart) {}
 
+    [[nodiscard]] const float& getDistance() const
+    {
+        return distance_;
+    }
+
 protected:
-    const std::array<uint8_t, 4>& header() const override
+    [[nodiscard]] const std::array<uint8_t, 4>& header() const override
     {
         return HEADER;
     }
