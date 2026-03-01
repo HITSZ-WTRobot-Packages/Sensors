@@ -60,8 +60,6 @@
 
 #include <cstring>
 
-#define DEG2RAD(__DEG__) ((__DEG__) * 3.14159265358979323846f / 180.0f)
-
 namespace sensors::ops
 {
 
@@ -93,20 +91,11 @@ public:
      */
     bool resetWorldCoordByPose(const Posture& posture);
 
-    [[nodiscard]] const float& getBodyX() const
-    {
-        return body_x_;
-    }
+    [[nodiscard]] const float& getBodyX() const { return body_x_; }
 
-    [[nodiscard]] const float& getBodyY() const
-    {
-        return body_y_;
-    }
+    [[nodiscard]] const float& getBodyY() const { return body_y_; }
 
-    [[nodiscard]] const float& getBodyYaw() const
-    {
-        return body_yaw_;
-    }
+    [[nodiscard]] const float& getBodyYaw() const { return body_yaw_; }
 
 protected:
     [[nodiscard]] const std::array<uint8_t, 2>& header() const override

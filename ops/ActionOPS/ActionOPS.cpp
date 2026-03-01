@@ -7,6 +7,8 @@
 
 #include <cmath>
 
+#define DEG2RAD(__DEG__) ((__DEG__) * 3.14159265358979323846f / 180.0f)
+
 namespace sensors::ops
 {
 ActionOPS::ActionOPS(UART_HandleTypeDef* huart, const Config& cfg) :
