@@ -6,6 +6,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_subdirectory(gyro/HWT101CT)
+add_subdirectory(gyro/JY901S)
 add_subdirectory(ops/ActionOPS)
 
 add_subdirectory(laser/stp23l)

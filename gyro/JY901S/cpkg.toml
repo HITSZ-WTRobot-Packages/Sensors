@@ -1,0 +1,4 @@
+name = "JY901S"
+pkgname = "SensorGyro::JY901S"
+version = "0.1.0"
+dependencies = ["FreeRTOS", "Math::Geometry", "protocol::UartRxSync", "utils"]
