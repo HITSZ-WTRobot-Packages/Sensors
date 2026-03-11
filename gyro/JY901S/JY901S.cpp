@@ -71,6 +71,8 @@ void JY901S::init()
     delay_us(250);
     sendCMD(Reg::RSW, cfg_.output);
     delay_us(250);
+    sendCMD(Reg::Axis6, static_cast<uint16_t>(cfg_.axis));
+    delay_us(250);
     unlock();
     osDelay(100);
     save();
@@ -85,6 +87,29 @@ void JY901S::calibrateAcc() const
     sendCMD(Reg::CalSw, 0x0000);
     osDelay(100);
     save();
+}
+
+void JY901S::calibrateAngle() const
+{
+    unlock();
+    osDelay(200);
+    sendCMD(Reg::CalSw, 0x0008);
+    osDelay(3000);
+    sendCMD(Reg::CalSw, 0x0000);
+    osDelay(100);
+    save();
+}
+void JY901S::resetRot()
+{
+    resetRotBy(math::Quatf());
+}
+
+void JY901S::resetRotBy(const math::Quatf& rot)
+{
+    // 当前姿态在 world 中的姿态为 rot，当前在 true world 中的姿态为 quat_w_;
+    // true world 在 world 中的姿态为 true_world_rot_;
+    // 有 rot = true_world_rot_ * quat_w_;
+    true_world_rot_ = rot * pose_in_body_.rot * quat_w_.inverse();
 }
 
 bool JY901S::decode(const uint8_t data[10])
@@ -190,7 +215,7 @@ void JY901S::feedbackTransform()
     const auto& R = pose_in_body_.rot;
 
     // orientation
-    body.quat_w   = quat_w_ * R.inverse();
+    body.quat_w   = true_world_rot_ * quat_w_ * R.inverse();
     body.angles_w = math::EulerDegf(body.quat_w);
 
     // angular velocity

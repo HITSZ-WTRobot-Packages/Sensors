@@ -20,7 +20,7 @@ class JY901S : public protocol::UartRxSync<1, 11>
 public:
     struct BodyState
     {
-        uint32_t        tick; // 用 HAL 库的时间作为时间
+        uint32_t        tick{ HAL_GetTick() }; // 用 HAL 库的时间作为时间
         math::Vec3f     acc_w;
         math::Vec3f     gyro_w;
         math::Vec3f     gyro_b;
@@ -73,6 +73,11 @@ public:
         g8  = 0x02,
         g16 = 0x03,
     };
+    enum class Axis : uint8_t
+    {
+        Axis9 = 0x00,
+        Axis6 = 0x01,
+    };
 
     /** 自己在上位机改
      * enum class Baud : uint8_t
@@ -93,6 +98,7 @@ public:
     {
         OutputType output = DefaultOutputType;
         RRate      rrate  = RRate::R200Hz;
+        Axis       axis   = Axis::Axis9;
     };
 
     JY901S(UART_HandleTypeDef* huart, const math::Posef& pose_in_body, const Config& config);
@@ -100,10 +106,14 @@ public:
 
     void init();
     void calibrateAcc() const;
+    void calibrateAngle() const;
 
     [[nodiscard]] const BodyState& body_state() const { return state_body_; }
 
     void registerTrigger(const Trigger& trigger) { trig_ = trigger; }
+
+    void resetRot();
+    void resetRotBy(const math::Quatf& rot);
 
 protected:
     static constexpr std::array<uint8_t, 1> HEADER = { 0x55 };
@@ -237,6 +247,11 @@ private:
 
     Trigger trig_;
 
+    /**
+     * 陀螺仪有地磁修正，所以其真实世界系的方向是固定的
+     * 该量表示真实世界系在世界系中的姿态
+     */
+    math::Quatf true_world_rot_;
     math::Posef pose_in_body_;
 
     uint32_t time_ms_{}; // 时间
