@@ -10,20 +10,25 @@
 #include "Vec.hpp"
 #include "Quaternion.hpp"
 
+#include <functional>
+
 namespace sensor::gyro
 {
 
 class JY901S : public protocol::UartRxSync<1, 11>
 {
 public:
-    struct State
+    struct BodyState
     {
+        uint32_t        tick; // 用 HAL 库的时间作为时间
         math::Vec3f     acc_w;
         math::Vec3f     gyro_w;
         math::Vec3f     gyro_b;
         math::Quatf     quat_w;
         math::EulerDegf angles_w;
     };
+
+    using Trigger = std::function<void(const BodyState&)>;
 
     /**
      * @document https://wit-motion.yuque.com/wumwnr/ltst03/vl3tpy#S6al6
@@ -94,8 +99,11 @@ public:
     JY901S(UART_HandleTypeDef* huart, const math::Posef& pose_in_body);
 
     void init();
-
     void calibrateAcc() const;
+
+    [[nodiscard]] const BodyState& body_state() const { return state_body_; }
+
+    void registerTrigger(const Trigger& trigger) { trig_ = trigger; }
 
 protected:
     static constexpr std::array<uint8_t, 1> HEADER = { 0x55 };
@@ -227,6 +235,8 @@ private:
 
     Config cfg_;
 
+    Trigger trig_;
+
     math::Posef pose_in_body_;
 
     uint32_t time_ms_{}; // 时间
@@ -235,11 +245,11 @@ private:
     /**
      * 陀螺仪相对于自身的加速度，角速度和在世界中的姿态
      */
-    math::Quatf     quat_w;
-    math::Vec3f     acc_raw;
-    math::Vec3f     acc_w;
-    math::Vec3f     gyro_s;
-    math::EulerDegf angles_w;
+    math::Quatf     quat_w_;
+    math::Vec3f     acc_raw_;
+    math::Vec3f     acc_w_;
+    math::Vec3f     gyro_s_;
+    math::EulerDegf angles_w_;
 
     struct
     {
@@ -249,7 +259,7 @@ private:
     /**
      * body 在世界中的加速度，角速度，姿态
      */
-    State state_body_;
+    BodyState state_body_;
 
     float temperature_{};
 
@@ -257,7 +267,6 @@ private:
     void unlock() const;
     void save() const;
     void sendCMD(uint8_t cmd, uint16_t data) const;
-
     void feedbackTransform();
 };
 

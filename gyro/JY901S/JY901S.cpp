@@ -107,16 +107,16 @@ bool JY901S::decode(const uint8_t data[10])
         feedbackTransform();
         break;
     case 0x51:
-        acc_raw = { mapIntoRange(read_int16(&data[1]), MaxAccel),
-                    mapIntoRange(read_int16(&data[3]), MaxAccel),
-                    mapIntoRange(read_int16(&data[5]), MaxAccel) };
+        acc_raw_ = { mapIntoRange(read_int16(&data[1]), MaxAccel),
+                     mapIntoRange(read_int16(&data[3]), MaxAccel),
+                     mapIntoRange(read_int16(&data[5]), MaxAccel) };
 
         temperature_ = static_cast<float>(read_int16(&data[7])) / 100.0f;
 
         feedback_ok_.acc = true;
         break;
     case 0x52:
-        gyro_s = {
+        gyro_s_ = {
             mapIntoRange(read_int16(&data[1]), MaxGyro),
             mapIntoRange(read_int16(&data[3]), MaxGyro),
             mapIntoRange(read_int16(&data[5]), MaxGyro),
@@ -125,25 +125,25 @@ bool JY901S::decode(const uint8_t data[10])
         feedback_ok_.gyro = true;
         break;
     case 0x53:
-        angles_w = {
+        angles_w_ = {
             mapIntoRange(read_int16(&data[1]), MaxAngle),
             mapIntoRange(read_int16(&data[3]), MaxAngle),
             mapIntoRange(read_int16(&data[5]), MaxAngle),
         };
         if (!(cfg_.output & Output::Quat))
-            quat_w = math::Quatf(angles_w);
+            quat_w_ = math::Quatf(angles_w_);
 
         feedback_ok_.quat = true;
         break;
     case 0x59:
-        quat_w = {
+        quat_w_ = {
             mapIntoRange(read_int16(&data[1]), MaxQuat),
             mapIntoRange(read_int16(&data[3]), MaxQuat),
             mapIntoRange(read_int16(&data[5]), MaxQuat),
             mapIntoRange(read_int16(&data[7]), MaxQuat),
         };
         if (!(cfg_.output & Output::Angle))
-            angles_w = math::EulerDegf(quat_w);
+            angles_w_ = math::EulerDegf(quat_w_);
 
         feedback_ok_.quat = true;
     default:;
@@ -152,6 +152,8 @@ bool JY901S::decode(const uint8_t data[10])
     {
         feedback_ok_ = {};
         feedbackTransform();
+        if (trig_ != nullptr)
+            trig_(state_body_);
     }
     return true;
 }
@@ -183,20 +185,20 @@ void JY901S::sendCMD(const uint8_t cmd, const uint16_t data) const
 
 void JY901S::feedbackTransform()
 {
-    State body;
+    BodyState body;
 
     const auto& R = pose_in_body_.rot;
 
     // orientation
-    body.quat_w   = quat_w * R.inverse();
+    body.quat_w   = quat_w_ * R.inverse();
     body.angles_w = math::EulerDegf(body.quat_w);
 
     // angular velocity
-    body.gyro_b = R.rotateVector(gyro_s);
+    body.gyro_b = R.rotateVector(gyro_s_);
     body.gyro_w = body.quat_w.rotateVector(body.gyro_b);
 
     // linear acceleration of imu in world (remove gravity)
-    acc_w = quat_w.rotateVector(acc_raw) - vec_g;
+    acc_w_ = quat_w_.rotateVector(acc_raw_) - vec_g;
 
     // imu position relative to body origin, expressed in world
     const auto r_bi_w = body.quat_w.rotateVector(pose_in_body_.pos);
@@ -204,7 +206,9 @@ void JY901S::feedbackTransform()
     // angular acceleration in world
     const auto alpha_w = (body.gyro_b - state_body_.gyro_b) / feedback_dt_;
 
-    body.acc_w = acc_w - alpha_w.cross(r_bi_w) - body.gyro_w.cross(body.gyro_w.cross(r_bi_w));
+    body.acc_w = acc_w_ - alpha_w.cross(r_bi_w) - body.gyro_w.cross(body.gyro_w.cross(r_bi_w));
+
+    body.tick = HAL_GetTick();
 
     state_body_ = body;
 }
