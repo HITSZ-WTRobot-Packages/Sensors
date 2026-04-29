@@ -8,8 +8,8 @@
 #include "../../../BasicComponents/bsp/i2c_driver/I2CBusDMA.hpp"
 #include "task.h"
 
-XGZP6847DDevice::XGZP6847DDevice(const float pressure_range_kpa, const uint8_t address_7bit)
-    : address_(address_7bit)
+XGZP6847DDevice::XGZP6847DDevice(const float pressure_range_kpa, const uint8_t address_7bit) :
+    address_(address_7bit)
 {
     k_ = calcK(pressure_range_kpa);
 }
@@ -60,7 +60,7 @@ void XGZP6847DDevice::onDataInvalidated()
 
 float XGZP6847DDevice::getPressure() const
 {
-    return sample_.pressure_pa;
+    return snapshot().pressure_pa;
 }
 
 XGZP6847DDevice::Sample XGZP6847DDevice::snapshot() const
@@ -72,31 +72,40 @@ XGZP6847DDevice::Sample XGZP6847DDevice::snapshot() const
     return copy;
 }
 
-void XGZP6847DDevice::setPressureRange(const float pressure_range_kpa)
-{
-    k_ = calcK(pressure_range_kpa);
-}
-
 int32_t XGZP6847DDevice::calcK(const float pressure_range_kpa)
 {
-    if (pressure_range_kpa > 500.0f && pressure_range_kpa <= 1000.0f) return 8;
-    if (pressure_range_kpa > 260.0f) return 16;
-    if (pressure_range_kpa > 130.0f) return 32;
-    if (pressure_range_kpa > 65.0f)  return 64;
-    if (pressure_range_kpa > 32.0f)  return 128;
-    if (pressure_range_kpa > 16.0f)  return 256;
-    if (pressure_range_kpa > 8.0f)   return 512;
-    if (pressure_range_kpa > 4.0f)   return 1024;
-    if (pressure_range_kpa > 2.0f)   return 2048;
-    return 4096;
+    // 旧版 datasheet 的 K 表按 max(abs(Pmin), abs(Pmax)) 选取。
+    // 例如 -100~100 kPa 传 100，-100~300 kPa 传 300。
+    if (pressure_range_kpa >= 1000.0f)
+        return 4;
+    if (pressure_range_kpa > 500.0f && pressure_range_kpa <= 1000.0f)
+        return 8;
+    if (pressure_range_kpa > 260.0f)
+        return 16;
+    if (pressure_range_kpa > 130.0f)
+        return 32;
+    if (pressure_range_kpa > 65.0f)
+        return 64;
+    if (pressure_range_kpa > 32.0f)
+        return 128;
+    if (pressure_range_kpa > 16.0f)
+        return 256;
+    if (pressure_range_kpa > 8.0f)
+        return 512;
+    if (pressure_range_kpa > 4.0f)
+        return 1024;
+    if (pressure_range_kpa > 2.0f)
+        return 2048;
+    if (pressure_range_kpa >= 1.0f)
+        return 4096;
+    return 8192;
 }
 
 int32_t XGZP6847DDevice::signExtend24(const uint8_t data[3])
 {
     // 芯片输出的是 24 位补码，需要手动扩展符号位。
-    int32_t value = (static_cast<int32_t>(data[0]) << 16) |
-                    (static_cast<int32_t>(data[1]) << 8)  |
-                     static_cast<int32_t>(data[2]);
+    int32_t value = (static_cast<int32_t>(data[0]) << 16) | (static_cast<int32_t>(data[1]) << 8) |
+                    static_cast<int32_t>(data[2]);
     if ((value & 0x00800000) != 0)
         value -= 0x01000000;
     return value;

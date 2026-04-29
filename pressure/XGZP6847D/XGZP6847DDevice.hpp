@@ -12,7 +12,8 @@ XGZP6847D 数字压力传感器驱动。
 旧版协议/量程换算参考资料：
 - 官方产品页: https://cfsensor.com/product/xgzp6847d/
 - V3.0 datasheet: https://cfsensor.com/wp-content/uploads/2026/04/XGZP6847D-Pressure-Sensor-V3.0.pdf
-- V2.8 检索页: https://www.scribd.com/document/891923775/XGZP6847D-Pressure-Sensor-V2-2025-05-04-21-28-42
+- V2.8 检索页:
+https://www.scribd.com/document/891923775/XGZP6847D-Pressure-Sensor-V2-2025-05-04-21-28-42
 
 当前实现使用的是旧版协议里的 K 表换算：
 pressure_pa = signExtend24(raw_pressure) / K
@@ -52,12 +53,18 @@ public:
      * @brief 获取设备名称
      * @return 固定返回设备名字符串
      */
-    const char* name() const override { return "XGZP6847D"; }
+    const char* name() const override
+    {
+        return "XGZP6847D";
+    }
     /**
      * @brief 获取设备的 7 位 I2C 地址
      * @return 当前设备地址
      */
-    uint8_t     address7bit() const override { return address_; }
+    uint8_t address7bit() const override
+    {
+        return address_;
+    }
 
     /**
      * @brief 通过最小寄存器读操作确认设备在线
@@ -65,7 +72,7 @@ public:
      * @param timeout_ms 单次事务超时时间，单位毫秒
      * @return 初始化探活是否成功
      */
-    bool   init(I2CBusDMA& bus, uint32_t timeout_ms) override;
+    bool init(I2CBusDMA& bus, uint32_t timeout_ms) override;
 
     /**
      * @brief 返回当前缓存的样本快照
@@ -79,13 +86,6 @@ public:
      */
     float getPressure() const;
 
-    /**
-     * @brief 根据量程重新设置内部换算系数
-     * @param pressure_range_kpa 旧版 K 表使用的等效量程，单位 kPa；
-     *        取 max(abs(Pmin), abs(Pmax))，不是 Pmax - Pmin
-     */
-    void setPressureRange(float pressure_range_kpa);
-
 protected:
     /**
      * @brief 发送一次联合转换命令
@@ -93,13 +93,16 @@ protected:
      * @param timeout_ms 单次事务超时时间，单位毫秒
      * @return 触发采样是否成功
      */
-    bool     onTrigger(I2CBusDMA& bus, uint32_t timeout_ms) override;
+    bool onTrigger(I2CBusDMA& bus, uint32_t timeout_ms) override;
 
     /**
      * @brief 获取芯片一次联合转换的最大等待时间
      * @return 转换时间上限，单位毫秒
      */
-    uint32_t conversionMs() const override { return ConversionMs; }
+    uint32_t conversionMs() const override
+    {
+        return ConversionMs;
+    }
 
     /**
      * @brief 读取原始数据并更新缓存
@@ -108,12 +111,12 @@ protected:
      * @param timeout_ms 单次事务超时时间，单位毫秒
      * @return 读取并解析是否成功
      */
-    bool     onRead(I2CBusDMA& bus, uint32_t now_ms, uint32_t timeout_ms) override;
+    bool onRead(I2CBusDMA& bus, uint32_t now_ms, uint32_t timeout_ms) override;
 
     /**
      * @brief 在父类判定数据失效时同步清理样本有效位
      */
-    void     onDataInvalidated() override;
+    void onDataInvalidated() override;
 
 private:
     static constexpr uint8_t  DefaultAddress = 0x6D; ///< 设备默认 7 位 I2C 地址
