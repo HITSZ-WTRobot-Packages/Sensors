@@ -4,10 +4,6 @@
  */
 #include "XGZP6847DDevice.hpp"
 
-#include "FreeRTOS.h"
-#include "../../../BasicComponents/bsp/i2c_driver/I2CBusDMA.hpp"
-#include "task.h"
-
 XGZP6847DDevice::XGZP6847DDevice(const float pressure_range_kpa, const uint8_t address_7bit) :
     address_(address_7bit)
 {

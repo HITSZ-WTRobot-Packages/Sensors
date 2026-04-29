@@ -4,6 +4,10 @@
  */
 #pragma once
 
+#include "FreeRTOS.h"
+#include "I2CBusDMA.hpp"
+#include "task.h"
+
 #include "I2CDevice.hpp"
 
 /**
