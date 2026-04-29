@@ -4,9 +4,10 @@
  */
 #pragma once
 
-#include "FreeRTOS.h"
+#include <array>
+#include <atomic>
+
 #include "I2CBusDMA.hpp"
-#include "task.h"
 
 #include "I2CDevice.hpp"
 
@@ -144,7 +145,8 @@ private:
      */
     static int32_t signExtend24(const uint8_t data[3]);
 
-    uint8_t address_{ DefaultAddress }; ///< 当前设备实际使用的 I2C 地址
-    int32_t k_{ 4096 };                 ///< 当前量程对应的压力换算系数
-    Sample  sample_{};                  ///< 最近一次成功更新后的样本缓存
+    uint8_t              address_{ DefaultAddress };   ///< 当前设备实际使用的 I2C 地址
+    int32_t              k_{ 4096 };                   ///< 当前量程对应的压力换算系数
+    std::array<Sample, 2> sample_buffers_{};           ///< 双缓冲样本缓存
+    std::atomic<uint8_t> active_sample_index_{ 0U };   ///< 当前对外发布的样本缓冲索引
 };

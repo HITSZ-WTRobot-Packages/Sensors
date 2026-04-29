@@ -38,20 +38,19 @@ bool XGZP6847DDevice::onRead(I2CBusDMA& bus, const uint32_t now_ms, const uint32
     const int16_t temp = static_cast<int16_t>((static_cast<uint16_t>(raw[3]) << 8U) | raw[4]);
     next.temperature_c = static_cast<float>(temp) / 256.0f;
 
-    // 对外暴露缓存快照，因此这里用临界区保证样本整体替换是原子的。
-    taskENTER_CRITICAL();
-    sample_ = next;
-    taskEXIT_CRITICAL();
+    const uint8_t next_index = active_sample_index_.load(std::memory_order_relaxed) ^ 1U;
+    sample_buffers_[next_index] = next;
+    active_sample_index_.store(next_index, std::memory_order_release);
     return true;
 }
 
 void XGZP6847DDevice::onDataInvalidated()
 {
-    // 父类只维护抽象的 data_valid_ 语义；这里同步清理对外样本上的 valid 位，
-    // 这样业务层只看 snapshot() 也不会误把旧样本当成新数据。
-    taskENTER_CRITICAL();
-    sample_.valid = false;
-    taskEXIT_CRITICAL();
+    const uint8_t active_index = active_sample_index_.load(std::memory_order_relaxed);
+    const uint8_t next_index   = active_index ^ 1U;
+    sample_buffers_[next_index] = sample_buffers_[active_index];
+    sample_buffers_[next_index].valid = false;
+    active_sample_index_.store(next_index, std::memory_order_release);
 }
 
 float XGZP6847DDevice::getPressure() const
@@ -61,11 +60,8 @@ float XGZP6847DDevice::getPressure() const
 
 XGZP6847DDevice::Sample XGZP6847DDevice::snapshot() const
 {
-    // 采样任务会整体替换 sample_，这里也用同一临界区做整包拷贝，避免读到撕裂数据。
-    taskENTER_CRITICAL();
-    const Sample copy = sample_;
-    taskEXIT_CRITICAL();
-    return copy;
+    const uint8_t active_index = active_sample_index_.load(std::memory_order_acquire);
+    return sample_buffers_[active_index];
 }
 
 int32_t XGZP6847DDevice::calcK(const float pressure_range_kpa)
