@@ -4,8 +4,6 @@
  */
 #include "XGZP6847DDevice.hpp"
 
-#include <iterator>
-
 #include "FreeRTOS.h"
 #include "../../../BasicComponents/bsp/i2c_driver/I2CBusDMA.hpp"
 #include "task.h"
