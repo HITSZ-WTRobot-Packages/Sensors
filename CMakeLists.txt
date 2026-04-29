@@ -11,3 +11,5 @@ add_subdirectory(ops/ActionOPS)
 
 add_subdirectory(laser/stp23l)
 add_subdirectory(laser/dt35)
+
+add_subdirectory(pressure/XGZP6847D)
