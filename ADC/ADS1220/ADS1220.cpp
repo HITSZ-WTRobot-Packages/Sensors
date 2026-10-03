@@ -6,6 +6,8 @@
 
 #include "ADS1220.hpp"
 
+#include <cmath>
+
 // 完整配置构造方式同样只保存参数，不在构造函数中访问尚未就绪的硬件。
 
 ADS1220::ADS1220(SPI_HandleTypeDef* hspi, const Config& config) : hspi_(hspi), Config_(config) {}
@@ -37,7 +39,7 @@ ADS1220::Status ADS1220::Init()
 
     // ApplyConfig() 只有在四个寄存器全部写入且读回一致后才返回成功。
 
-    LastStatus_ = ApplyConfig();
+    LastStatus_ = ApplyConfig(Config_);
     if (LastStatus_ == Status::Ok)
     {
         Initialized_ = true;
@@ -91,14 +93,22 @@ ADS1220::Status ADS1220::Configure(const Config& config)
 
     if (!Initialized_)
     {
-        LastStatus_ = Status::NotInitialized;
+        Config_     = config;
+        LastStatus_ = Status::Ok;
         return LastStatus_;
     }
 
     // 运行期间重新配置会重写全部寄存器；ApplyConfig() 最后重新发送 START。
-    Config_     = config;
-    LastStatus_ = ApplyConfig();
-    // Todo:这里如果重新配置失败软硬件的config会不匹配，应检查配置正常后在修改config
+    LastStatus_ = ApplyConfig(config);
+    if (LastStatus_ == Status::Ok)
+    {
+        Config_ = config;
+    }
+    else
+    {
+        // 硬件可能只接受了部分配置；保留旧配置，必须重新 Init() 后才能采样。
+        Initialized_ = false;
+    }
 
     return LastStatus_;
 }
@@ -155,7 +165,7 @@ ADS1220::Status ADS1220::SetGain(Gain gain)
 
 ADS1220::Status ADS1220::SetVref(float Vref)
 {
-    if (Vref <= 0.0f)
+    if (!std::isfinite(Vref) || Vref <= 0.0f)
     {
         LastStatus_ = Status::InvalidArgument;
         return LastStatus_;
@@ -207,12 +217,12 @@ ADS1220::Status ADS1220::ReadRegisters(uint8_t registers[4])
     return ReadData(registers, 4);
 }
 
-ADS1220::Status ADS1220::ApplyConfig()
+ADS1220::Status ADS1220::ApplyConfig(const Config& config)
 {
-    // expected 是 Config_ 的唯一寄存器表示；业务层不会接触这些原始字节。
+    // 使用候选配置生成寄存器；调用方仅在应用成功后提交 Config_。
 
     uint8_t expected[4] = {};
-    BuildRegisters(expected);
+    BuildRegisters(config, expected);
 
     Status status = WriteRegisters(expected);
     if (status != Status::Ok)
@@ -261,7 +271,7 @@ ADS1220::Status ADS1220::ValidateConfig(const Config& config) const
         (mode > 2U) || (dr > 6U) || ((conversion != 0x00U) && (conversion != 0x04U)) ||
         (reference > 0xC0U) || ((reference & 0x3FU) != 0U) || (filter > 0x30U) ||
         ((filter & 0x0FU) != 0U) || (current > 7U) || (route1 > 6U) || (route2 > 6U) ||
-        (config.reference_voltage <= 0.0f))
+        !std::isfinite(config.reference_voltage) || (config.reference_voltage <= 0.0f))
     {
         return Status::InvalidArgument;
     }
@@ -302,33 +312,33 @@ ADS1220::Status ADS1220::FromHalStatus(HAL_StatusTypeDef status) const
     }
 }
 
-void ADS1220::BuildRegisters(uint8_t registers[4]) const
+void ADS1220::BuildRegisters(const Config& config, uint8_t registers[4]) const
 {
     // 配置寄存器 0：MUX[7:4]、GAIN[3:1]、PGA_BYPASS[0]。
 
-    registers[0] = static_cast<uint8_t>(Config_.input) |
-                   static_cast<uint8_t>(static_cast<uint8_t>(Config_.gain) << 1U) |
-                   static_cast<uint8_t>(Config_.bypass_pga ? 0x01U : 0x00U);
+    registers[0] = static_cast<uint8_t>(config.input) |
+                   static_cast<uint8_t>(static_cast<uint8_t>(config.gain) << 1U) |
+                   static_cast<uint8_t>(config.bypass_pga ? 0x01U : 0x00U);
 
     // 配置寄存器 1：DR[7:5]、MODE[4:3]、CM[2]、TS[1]、BCS[0]。
 
-    registers[1] = static_cast<uint8_t>(Config_.data_rate) |
-                   static_cast<uint8_t>(Config_.conversion_mode) |
-                   static_cast<uint8_t>(Config_.temperature_sensor ? 0x02U : 0x00U) |
-                   static_cast<uint8_t>(Config_.burn_out_sources ? 0x01U : 0x00U);
+    registers[1] = static_cast<uint8_t>(config.data_rate) |
+                   static_cast<uint8_t>(config.conversion_mode) |
+                   static_cast<uint8_t>(config.temperature_sensor ? 0x02U : 0x00U) |
+                   static_cast<uint8_t>(config.burn_out_sources ? 0x01U : 0x00U);
 
     // 配置寄存器 2：VREF[7:6]、FIR[5:4]、PSW[3]、IDAC[2:0]。
 
-    registers[2] = static_cast<uint8_t>(Config_.voltage_reference) |
-                   static_cast<uint8_t>(Config_.filter) |
-                   static_cast<uint8_t>(Config_.low_side_switch ? 0x08U : 0x00U) |
-                   static_cast<uint8_t>(Config_.idac_current);
+    registers[2] = static_cast<uint8_t>(config.voltage_reference) |
+                   static_cast<uint8_t>(config.filter) |
+                   static_cast<uint8_t>(config.low_side_switch ? 0x08U : 0x00U) |
+                   static_cast<uint8_t>(config.idac_current);
 
     // 配置寄存器 3：I1MUX[7:5]、I2MUX[4:2]、DRDYM[1]；保留位始终写 0。
 
-    registers[3] = static_cast<uint8_t>(static_cast<uint8_t>(Config_.idac1_route) << 5U) |
-                   static_cast<uint8_t>(static_cast<uint8_t>(Config_.idac2_route) << 2U) |
-                   static_cast<uint8_t>(Config_.dout_drdy_enabled ? 0x02U : 0x00U);
+    registers[3] = static_cast<uint8_t>(static_cast<uint8_t>(config.idac1_route) << 5U) |
+                   static_cast<uint8_t>(static_cast<uint8_t>(config.idac2_route) << 2U) |
+                   static_cast<uint8_t>(config.dout_drdy_enabled ? 0x02U : 0x00U);
 }
 
 void ADS1220::DecodeValue(const uint8_t data[3])

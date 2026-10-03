@@ -191,8 +191,6 @@ public:
     /**
      * @brief ADS1220 完整工作配置。
      *
-     * 默认值保持现有工程行为：AIN0-AIN1 差分输入、128 倍增益、正常模式
-     * 330 SPS、连续转换、外部 REFP0/REFN0 参考、PGA 启用、IDAC 关闭。
      */
     struct Config
     {
@@ -201,7 +199,7 @@ public:
         DataRate         data_rate;         ///< 工作模式与输出数据率。
         ConversionMode   conversion_mode;   ///< 单次或连续转换。
         VoltageReference voltage_reference; ///< 硬件参考源。
-        float            reference_voltage; ///< 外部/电源参考的实际电压；内部参考固定使用 2.048 V。
+        float            reference_voltage; ///< 必须为有限正数；外部/电源参考的实际电压，内部参考固定使用 2.048 V。
         FirFilter        filter;            ///< 20 SPS/5 SPS 下的工频抑制方式。
         bool             bypass_pga;        ///< true 时旁路 PGA，仅允许 X1、X2、X4。
         bool             temperature_sensor; ///< true 时测量芯片内部温度，而非模拟输入。
@@ -233,7 +231,10 @@ public:
 
     /**
      * @brief 应用一套完整配置。
-     * @note 初始化前调用只保存配置；初始化后调用会立即写入、校验并重新启动转换。
+     * @note 初始化前调用仅校验并保存配置，成功返回 Ok，不访问硬件。
+     *       初始化后调用会立即写入、校验并重新启动转换，全部成功后才保存新配置。
+     *       参数校验失败不改变当前配置或初始化状态；硬件应用失败则保留旧配置并清除初始化状态，
+     *       必须重新调用 Init() 成功后才能继续采样。
      */
     Status Configure(const Config& config);
 
@@ -246,12 +247,13 @@ public:
     /** @brief 发送硬件复位命令；成功后对象变为未初始化状态。 */
     Status Reset();
 
-    /** @brief 修改增益；已初始化时立即重写并校验整套配置。 */
+    /** @brief 修改增益；配置缓存及失败恢复规则同 Configure()。 */
     Status SetGain(Gain gain);
 
     /**
      * @brief 修改电压换算使用的参考电压，单位 V。
      * @note 该值是软件换算参数，不会改变 ADS1220 的参考源选择。
+     * @return 非有限值或非正数返回 InvalidArgument 并保留原值，否则返回 Ok。
      */
     Status SetVref(float Vref);
 
@@ -304,8 +306,8 @@ private:
     /** @brief 从配置寄存器 0 开始连续读取全部 4 个配置寄存器。 */
     Status ReadRegisters(uint8_t registers[4]);
 
-    /** @brief 编码、写入并读回校验当前 Config_，成功后发送 START。 */
-    Status ApplyConfig();
+    /** @brief 编码、写入并读回校验候选配置，成功后发送 START。 */
+    Status ApplyConfig(const Config& config);
 
     /** @brief 检查枚举范围及数据手册规定的配置组合限制。 */
     Status ValidateConfig(const Config& config) const;
@@ -313,8 +315,8 @@ private:
     /** @brief 将 STM32 HAL SPI 状态转换为公共 Status。 */
     Status FromHalStatus(HAL_StatusTypeDef status) const;
 
-    /** @brief 将高层 Config_ 编码为配置寄存器 0～3。 */
-    void BuildRegisters(uint8_t registers[4]) const;
+    /** @brief 将高层配置编码为配置寄存器 0～3。 */
+    void BuildRegisters(const Config& config, uint8_t registers[4]) const;
 
     /** @brief 解码 24 位补码 ADC 数据或左对齐的 14 位温度数据。 */
     void DecodeValue(const uint8_t data[3]);
