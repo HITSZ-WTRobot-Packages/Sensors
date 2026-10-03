@@ -17,7 +17,7 @@ namespace sensors::laser
 class STP23L final : public protocol::UartRxSync<4, 195>
 {
 public:
-    explicit STP23L(UART_HandleTypeDef* huart) : UartRxSync(huart) {}
+    explicit STP23L(UART_HandleTypeDef* huart, Buffer& buffer) : UartRxSync(huart, buffer) {}
 
     [[nodiscard]] const float& getDistance() const
     {

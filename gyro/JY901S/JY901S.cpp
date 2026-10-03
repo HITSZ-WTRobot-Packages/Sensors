@@ -52,13 +52,16 @@ static constexpr float mapIntoRange(const int16_t input, const float max)
     return static_cast<float>(input) * max / 32768;
 }
 
-JY901S::JY901S(UART_HandleTypeDef* huart, const math::Posef& pose_in_body, const Config& config) :
-    UartRxSync(huart), cfg_(config), pose_in_body_(pose_in_body),
+JY901S::JY901S(UART_HandleTypeDef* huart,
+               Buffer&             buffer,
+               const math::Posef&  pose_in_body,
+               const Config&       config) :
+    UartRxSync(huart, buffer), cfg_(config), pose_in_body_(pose_in_body),
     feedback_dt_(get_feedback_dt(cfg_.rrate))
 {
 }
-JY901S::JY901S(UART_HandleTypeDef* huart, const math::Posef& pose_in_body) :
-    UartRxSync(huart), cfg_({}), pose_in_body_(pose_in_body),
+JY901S::JY901S(UART_HandleTypeDef* huart, Buffer& buffer, const math::Posef& pose_in_body) :
+    UartRxSync(huart, buffer), cfg_({}), pose_in_body_(pose_in_body),
     feedback_dt_(get_feedback_dt(cfg_.rrate))
 {
 }

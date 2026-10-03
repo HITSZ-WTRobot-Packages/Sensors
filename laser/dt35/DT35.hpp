@@ -58,7 +58,7 @@ private:
 class DT35Board final : public protocol::UartRxSync<2, 24>
 {
 public:
-    explicit DT35Board(UART_HandleTypeDef* huart) : UartRxSync(huart) {}
+    explicit DT35Board(UART_HandleTypeDef* huart, Buffer& buffer) : UartRxSync(huart, buffer) {}
 
     bool  registerChannel(size_t i, DT35* dt35);
     DT35* unregisterChannel(size_t i);

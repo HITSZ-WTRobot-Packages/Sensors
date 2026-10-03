@@ -36,7 +36,7 @@ public:
         RRate_1000Hz = 0x0D, ///< 1000Hz
     };
 
-    explicit HWT101CT(UART_HandleTypeDef* huart) : UartRxSync(huart) {}
+    explicit HWT101CT(UART_HandleTypeDef* huart, Buffer& buffer) : UartRxSync(huart, buffer) {}
 
     /**
      * 重置 yaw
@@ -56,14 +56,8 @@ public:
 
     void setOutputRate(RRate rate);
 
-    [[nodiscard]] const float& getYaw() const
-    {
-        return yaw_;
-    }
-    [[nodiscard]] const float& getWz() const
-    {
-        return wz_;
-    }
+    [[nodiscard]] const float& getYaw() const { return yaw_; }
+    [[nodiscard]] const float& getWz() const { return wz_; }
 
 protected:
     [[nodiscard]] const std::array<uint8_t, 1>& header() const override
