@@ -80,7 +80,7 @@ public:
         float x, y, yaw;
     };
 
-    ActionOPS(UART_HandleTypeDef* huart, const Config& cfg);
+    ActionOPS(UART_HandleTypeDef* huart, Buffer& buffer, const Config& cfg);
 
     /**
      * @brief  世界坐标系重置函数（清零pos_x、pos_y和陀螺仪偏航角）
