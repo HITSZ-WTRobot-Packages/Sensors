@@ -48,20 +48,20 @@
 
 ## STM32 Cortex-M 兼容性边界
 
-以下保留原文已有的官方 HAL/CMSIS 兼容性核查记录，区分的是**当前驱动能否直接配合所核查源码编译使用**，不是芯片硬件能否产生 WS2812 波形，也不是本次文档整理新执行的验证。上游 `master/main` 会变化；历史 Cube 版本和每个料号的请求映射仍需单独检查。宿主使用 C++17 或更新标准。
+以下是已有的官方 HAL/CMSIS 源码兼容性核查记录，区分的是**当前驱动能否直接配合所核查源码编译使用**，不是芯片硬件能否产生 WS2812 波形，不构成逐料号支持承诺，也不是物理波形或上板验证。上游 `master/main` 会变化；历史 Cube 版本和每个料号的请求映射仍需单独检查。宿主使用 C++17 或更新标准。
 
 | 分类 | 系列或既有核查代表型号 | 当前限制 |
 | --- | --- | --- |
-| Cortex-M0/M0+ 编译不兼容 | F0；C0、G0、L0、U0、WB0、WL3x；双核 WB/WL 的 M0+ 核也在此列 | 原记录中 GNU Arm GCC 16.2.0 下，`std::atomic<State>::is_always_lock_free` 为 `false`，实例化驱动触发断言。这里不把 WB/WL 的 M4 应用核一并判为不兼容。 |
-| 经典 HAL 的通道校验宏不兼容 | F1/F2/F4；原记录使用完整官方头文件编译确认 STM32F103xB、STM32F207xx、STM32F407xx 失败 | 这些代表型号提供 `IS_TIM_CCX_INSTANCE`，但没有驱动使用的 `IS_TIM_CCX_CHANNEL`。不能仅因 TIM/DMA 其他 API 相同就声明可直接使用。 |
-| L1 HAL 编译不兼容 | L1；原记录使用完整官方头文件编译确认 STM32L152xB 失败 | 除校验宏差异外，`TIM_Base_InitTypeDef` 没有 `RepetitionCounter`；运行时条件短路不能绕过 C++ 成员检查。 |
+| Cortex-M0/M0+ 编译不兼容 | F0；C0、G0、L0、U0、WB0、WL3x；双核 WB/WL 的 M0+ 核也在此列 | 已有核查记录中 GNU Arm GCC 16.2.0 下，`std::atomic<State>::is_always_lock_free` 为 `false`，实例化驱动触发断言。这里不把 WB/WL 的 M4 应用核一并判为不兼容。 |
+| 经典 HAL 的通道校验宏不兼容 | F1/F2/F4；已有核查使用完整官方头文件编译确认 STM32F103xB、STM32F207xx、STM32F407xx 失败 | 这些代表型号提供 `IS_TIM_CCX_INSTANCE`，但没有驱动使用的 `IS_TIM_CCX_CHANNEL`。不能仅因 TIM/DMA 其他 API 相同就声明可直接使用。 |
+| L1 HAL 编译不兼容 | L1；已有核查使用完整官方头文件编译确认 STM32L152xB 失败 | 除校验宏差异外，`TIM_Base_InitTypeDef` 没有 `RepetitionCounter`；运行时条件短路不能绕过 C++ 成员检查。 |
 | 新 DMA HAL 需要适配 | H5、H7RS、U3、U5、N6、WBA | GPDMA/HPDMA/LPDMA 的 HAL 使用 `SrcInc`/`DestInc`、`SrcDataWidth`/`DestDataWidth` 等配置，不符合当前 `PeriphInc`/`MemInc`、alignment 字段及 `DMA_CIRCULAR` 校验。循环续填需要适配对应 linked-list/circular 配置与 HT/TC 语义；不能把经典 H7 的结果套用于 H7RS。 |
 | HAL2 需要移植 | C5（官方 STM32CubeC5 HAL2） | HAL2 的句柄、状态和传输 API 不同，例如 `hal_dma_state_t` 使用 IDLE/ACTIVE，而非当前依赖的 READY/BUSY 状态契约。 |
 | 其余经典 HAL 候选 | F3、F7、G4、L4/L4+、L5、经典 H7、WB/WL 的 M4 应用核 | 不属于上述已识别的不兼容组，但没有逐料号编译和上板认证；必须检查所选版本的宏、API、TIM CC DMA 路由和内存可达性，不能仅凭内核型号宣称兼容。 |
 
 所有候选仍要求：TIM CH1～4 可输出 PWM1 并有对应 **CC** DMA 请求；支持双方 halfword 的循环传输与半/全完成回调；停发后 DIN 为低；续填在半区期限内完成。TIM6/TIM7、无 DMA 请求的通道、仅有互补输出的接法或仅配置 TIM update DMA 都不能直接替代这一契约。DTCM/CCM、D-Cache、TrustZone 和多核外设归属是具体内存/配置限制，不是把整个 M7/M33 系列判为不兼容的理由。
 
-原文核查依据：
+核查依据：
 
 - 经典 HAL：[F1 TIM](https://github.com/STMicroelectronics/stm32f1xx-hal-driver/blob/master/Inc/stm32f1xx_hal_tim.h)、[F103 CMSIS](https://github.com/STMicroelectronics/cmsis-device-f1/blob/master/Include/stm32f103xb.h)、[F2 TIM](https://github.com/STMicroelectronics/stm32f2xx-hal-driver/blob/master/Inc/stm32f2xx_hal_tim.h)、[F4 TIM](https://github.com/STMicroelectronics/stm32f4xx-hal-driver/blob/master/Inc/stm32f4xx_hal_tim.h)、[F407 CMSIS](https://github.com/STMicroelectronics/cmsis-device-f4/blob/master/Include/stm32f407xx.h)、[L1 TIM](https://github.com/STMicroelectronics/stm32l1xx-hal-driver/blob/master/Inc/stm32l1xx_hal_tim.h)。
 - 新 DMA HAL：[H5](https://github.com/STMicroelectronics/stm32h5xx-hal-driver/blob/main/Inc/stm32h5xx_hal_dma.h)、[H7RS](https://github.com/STMicroelectronics/stm32h7rsxx-hal-driver/blob/main/Inc/stm32h7rsxx_hal_dma.h)、[U3](https://github.com/STMicroelectronics/stm32u3xx-hal-driver/blob/main/Inc/stm32u3xx_hal_dma.h)、[U5](https://github.com/STMicroelectronics/stm32u5xx-hal-driver/blob/main/Inc/stm32u5xx_hal_dma.h)、[N6](https://github.com/STMicroelectronics/stm32n6xx-hal-driver/blob/main/Inc/stm32n6xx_hal_dma.h)、[WBA](https://github.com/STMicroelectronics/stm32wbaxx-hal-driver/blob/main/Inc/stm32wbaxx_hal_dma.h)。
