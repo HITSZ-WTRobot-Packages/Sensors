@@ -11,8 +11,8 @@
 
 namespace sensors::ops
 {
-ActionOPS::ActionOPS(UART_HandleTypeDef* huart, const Config& cfg) :
-    UartRxSync(huart), lock_(osMutexNew(nullptr)),
+ActionOPS::ActionOPS(UART_HandleTypeDef* huart, Buffer& buffer, const Config& cfg) :
+    UartRxSync(huart, buffer), lock_(osMutexNew(nullptr)),
     setup_{ .x = cfg.x_offset * 1e-3f, .y = cfg.y_offset * 1e-3f, .yaw = cfg.yaw_offset },
     gyro_yaw_(cfg.yaw_car)
 {

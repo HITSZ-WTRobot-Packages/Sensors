@@ -101,8 +101,11 @@ public:
         Axis       axis   = Axis::Axis9;
     };
 
-    JY901S(UART_HandleTypeDef* huart, const math::Posef& pose_in_body, const Config& config);
-    JY901S(UART_HandleTypeDef* huart, const math::Posef& pose_in_body);
+    JY901S(UART_HandleTypeDef* huart,
+           Buffer&             buffer,
+           const math::Posef&  pose_in_body,
+           const Config&       config);
+    JY901S(UART_HandleTypeDef* huart, Buffer& buffer, const math::Posef& pose_in_body);
 
     void init();
     void calibrateAcc() const;
