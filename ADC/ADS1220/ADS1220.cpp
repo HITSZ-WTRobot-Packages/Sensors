@@ -12,10 +12,85 @@
 
 ADS1220::ADS1220(SPI_HandleTypeDef* hspi, const Config& config) : hspi_(hspi), Config_(config) {}
 
+ADS1220::Status ADS1220::Calibrate()
+{
+    if (!Initialized_)
+    {
+        return LastStatus_ = Status::NotInitialized;
+    }
+    if (!IsAnalogInput(Config_))
+    {
+        return LastStatus_ = Status::InvalidArgument;
+    }
+
+    const Config original_config = Config_;
+    const int32_t previous_offset = CodeOffset_;
+    const int32_t previous_raw = RawValue_;
+    const float previous_voltage = Voltage_;
+    const float previous_gain_voltage = GainVoltage_;
+    const float previous_temperature = Temperature_;
+    const float previous_monitor_voltage = MonitorVoltage_;
+    const bool previous_has_sample = HasSample_;
+
+    // 按数据手册 8.3.12 短接 PGA 两端，保持原增益和参考源。
+    // 校准流程自身等待转换完成；正常 Update() 只检查就绪，不阻塞等待。
+    Config_.input = InputMux::ShortedMidSupply;
+    Config_.conversion_mode = ConversionMode::SingleShot;
+    Config_.burn_out_sources = false;
+    CodeOffset_ = 0;
+    Status status = ApplyConfig();
+    constexpr uint16_t sample_count = 32;
+    int64_t sum = 0;
+    for (uint16_t index = 0; index < sample_count && status == Status::Ok; ++index)
+    {
+        if (index != 0)
+        {
+            status = Start();
+        }
+        if (status == Status::Ok)
+        {
+            WaitForConversion();
+            status = Update();
+        }
+        if (status == Status::Ok)
+        {
+            sum += RawValue_;
+        }
+    }
+
+    // 失败也要恢复并读回验证原配置，不能仅回滚软件变量。
+    Config_ = original_config;
+    CodeOffset_ = previous_offset;
+    const Status restore_status = ApplyConfig();
+    if (restore_status != Status::Ok)
+    {
+        Initialized_ = false;
+        Converting_ = false;
+        ClearSample();
+        return LastStatus_ = restore_status;
+    }
+    if (status == Status::Ok)
+    {
+        CodeOffset_ = static_cast<int32_t>(sum / sample_count);
+        // 缓存中不能保留按旧校准值换算的结果，下次 Update() 才发布真实通道数据。
+        ClearSample();
+    }
+    else
+    {
+        RawValue_ = previous_raw;
+        Voltage_ = previous_voltage;
+        GainVoltage_ = previous_gain_voltage;
+        Temperature_ = previous_temperature;
+        MonitorVoltage_ = previous_monitor_voltage;
+        HasSample_ = previous_has_sample;
+    }
+    return LastStatus_ = status;
+}
+
 ADS1220::Status ADS1220::Init()
 {
-    // 初始化顺序固定为：参数校验 -> 芯片复位 -> 写寄存器 -> 读回校验 -> 启动转换。
-    // 任一步失败都会立即返回，避免业务层使用部分初始化的对象。
+    // 初始化顺序：参数校验 -> 复位 -> 配置校验 -> 模拟输入偏移校准 -> 恢复采样。
+    // 只有包括校准在内的完整流程成功，业务层才可以开始采样。
 
     if (hspi_ == nullptr)
     {
@@ -39,27 +114,43 @@ ADS1220::Status ADS1220::Init()
 
     // ApplyConfig() 只有在四个寄存器全部写入且读回一致后才返回成功。
 
-    LastStatus_ = ApplyConfig(Config_);
-    if (LastStatus_ == Status::Ok)
+    LastStatus_ = ApplyConfig();
+    if (LastStatus_ != Status::Ok)
     {
-        Initialized_ = true;
+        return LastStatus_;
+    }
+    Initialized_ = true;
+    // 温度和系统监测模式不使用 PGA 偏移校准。
+    if (IsAnalogInput(Config_))
+    {
+        LastStatus_ = Calibrate();
+        if (LastStatus_ != Status::Ok)
+        {
+            Initialized_ = false;
+            Converting_ = false;
+            ClearSample();
+        }
     }
     return LastStatus_;
 }
 
 ADS1220::Status ADS1220::Update()
 {
-    // RDATA 返回芯片内部缓存的最近一次转换值；这里不轮询 DRDY。
-    // SPI 失败时保留上一次有效的 RawValue_、Voltage_ 和 Temperature_。
-
     if (!Initialized_)
     {
-        LastStatus_ = Status::NotInitialized;
-        return LastStatus_;
+        return LastStatus_ = Status::NotInitialized;
+    }
+    if (!Converting_)
+    {
+        return LastStatus_ = Status::NotReady;
     }
 
-    // 先发送 RDATA 命令，再额外产生 24 个 SCLK 读取 MSB、MID、LSB。
-
+    // 尚未经过完整保守周期时立即返回；不等待、不访问 SPI、不修改测量缓存。
+    // 无符号差值允许 HAL 毫秒 tick 跨越 UINT32_MAX 回绕。
+    if (HAL_GetTick() - ConversionStartedAt_ < GetConversionDelayMs())
+    {
+        return LastStatus_ = Status::NotReady;
+    }
     LastStatus_ = SendCommand(Cmd::RDATA);
     if (LastStatus_ != Status::Ok)
     {
@@ -67,50 +158,93 @@ ADS1220::Status ADS1220::Update()
     }
 
     uint8_t data[3] = {};
-    LastStatus_     = ReadData(data, 3);
+    LastStatus_ = ReadData(data, 3);
     if (LastStatus_ != Status::Ok)
     {
         return LastStatus_;
     }
 
-    // 只有完整收到三个字节后才更新业务层可见的测量缓存。
-
     DecodeValue(data);
+    HasSample_ = true;
+    Converting_ = Config_.conversion_mode == ConversionMode::Continuous;
+    ConversionStartedAt_ = HAL_GetTick();
     return LastStatus_;
 }
 
 ADS1220::Status ADS1220::Configure(const Config& config)
 {
-    // 先验证候选配置，防止无效组合覆盖当前仍可使用的 Config_。
-
     LastStatus_ = ValidateConfig(config);
     if (LastStatus_ != Status::Ok)
     {
         return LastStatus_;
     }
-
-    // 未初始化时仅缓存配置，便于构造后、Init() 前分阶段设置参数。
-
     if (!Initialized_)
     {
-        Config_     = config;
-        LastStatus_ = Status::Ok;
-        return LastStatus_;
-    }
-
-    // 运行期间重新配置会重写全部寄存器；ApplyConfig() 最后重新发送 START。
-    LastStatus_ = ApplyConfig(config);
-    if (LastStatus_ == Status::Ok)
-    {
         Config_ = config;
-    }
-    else
-    {
-        // 硬件可能只接受了部分配置；保留旧配置，必须重新 Init() 后才能采样。
-        Initialized_ = false;
+        CodeOffset_ = 0;
+        Converting_ = false;
+        ClearSample();
+        return LastStatus_ = Status::Ok;
     }
 
-    return LastStatus_;
+    const Config previous_config = Config_;
+    const int32_t previous_offset = CodeOffset_;
+    const int32_t previous_raw = RawValue_;
+    const float previous_voltage = Voltage_;
+    const float previous_gain_voltage = GainVoltage_;
+    const float previous_temperature = Temperature_;
+    const float previous_monitor_voltage = MonitorVoltage_;
+    const bool previous_has_sample = HasSample_;
+    const bool previous_converting = Converting_;
+
+    const bool needs_calibration = IsAnalogInput(config) &&
+        (!IsAnalogInput(previous_config) || config.gain != previous_config.gain ||
+         config.bypass_pga != previous_config.bypass_pga ||
+         config.data_rate != previous_config.data_rate ||
+         config.voltage_reference != previous_config.voltage_reference ||
+         config.reference_voltage != previous_config.reference_voltage);
+
+    // 候选配置仅在本次非并发事务内部使用；失败后必须恢复硬件并验证。
+    Config_ = config;
+    Status status = ApplyConfig();
+    if (status == Status::Ok && needs_calibration)
+    {
+        status = Calibrate();
+    }
+    if (status == Status::Ok)
+    {
+        if (!IsAnalogInput(Config_))
+        {
+            CodeOffset_ = 0;
+        }
+        ClearSample();
+        return LastStatus_ = Status::Ok;
+    }
+
+    Config_ = previous_config;
+    CodeOffset_ = previous_offset;
+    Status restore_status = ApplyConfig();
+    if (restore_status == Status::Ok && !previous_converting)
+    {
+        restore_status = SendCommand(Cmd::POWERDOWN);
+        Converting_ = false;
+    }
+    if (restore_status != Status::Ok)
+    {
+        Initialized_ = false;
+        Converting_ = false;
+        ClearSample();
+        return LastStatus_ = restore_status;
+    }
+
+    Initialized_ = true;
+    RawValue_ = previous_raw;
+    Voltage_ = previous_voltage;
+    GainVoltage_ = previous_gain_voltage;
+    Temperature_ = previous_temperature;
+    MonitorVoltage_ = previous_monitor_voltage;
+    HasSample_ = previous_has_sample;
+    return LastStatus_ = status;
 }
 
 ADS1220::Status ADS1220::Start()
@@ -122,6 +256,18 @@ ADS1220::Status ADS1220::Start()
     }
 
     LastStatus_ = SendCommand(Cmd::START);
+    if (LastStatus_ == Status::Ok)
+    {
+        Converting_ = true;
+        ConversionStartedAt_ = HAL_GetTick();
+        ClearSample();
+    }
+    else
+    {
+        Initialized_ = false;
+        Converting_ = false;
+        ClearSample();
+    }
     return LastStatus_;
 }
 
@@ -134,6 +280,12 @@ ADS1220::Status ADS1220::PowerDown()
     }
 
     LastStatus_ = SendCommand(Cmd::POWERDOWN);
+    Converting_ = false;
+    ClearSample();
+    if (LastStatus_ != Status::Ok)
+    {
+        Initialized_ = false;
+    }
     return LastStatus_;
 }
 
@@ -147,11 +299,15 @@ ADS1220::Status ADS1220::Reset()
 
     // 数据手册要求 RESET 后至少等待 50 us + 32 个系统时钟周期；1 ms 留有充分裕量。
 
+    // 即使传输超时也无法确定芯片是否已复位，先使软件状态失效。
+    Initialized_ = false;
+    Converting_ = false;
+    CodeOffset_ = 0;
+    ClearSample();
     LastStatus_ = SendCommand(Cmd::RESET);
     if (LastStatus_ == Status::Ok)
     {
         HAL_Delay(1);
-        Initialized_ = false;
     }
     return LastStatus_;
 }
@@ -165,16 +321,9 @@ ADS1220::Status ADS1220::SetGain(Gain gain)
 
 ADS1220::Status ADS1220::SetVref(float Vref)
 {
-    if (!std::isfinite(Vref) || Vref <= 0.0f)
-    {
-        LastStatus_ = Status::InvalidArgument;
-        return LastStatus_;
-    }
-
-    // reference_voltage 只参与数字码到电压的换算，因此无需重写硬件寄存器。
-    Config_.reference_voltage = Vref;
-    LastStatus_               = Status::Ok;
-    return LastStatus_;
+    Config config = Config_;
+    config.reference_voltage = Vref;
+    return Configure(config);
 }
 
 ADS1220::Status ADS1220::SendData(uint8_t* pData, uint8_t size)
@@ -217,12 +366,12 @@ ADS1220::Status ADS1220::ReadRegisters(uint8_t registers[4])
     return ReadData(registers, 4);
 }
 
-ADS1220::Status ADS1220::ApplyConfig(const Config& config)
+ADS1220::Status ADS1220::ApplyConfig()
 {
-    // 使用候选配置生成寄存器；调用方仅在应用成功后提交 Config_。
+    // expected 是 Config_ 的唯一寄存器表示；业务层不会接触这些原始字节。
 
     uint8_t expected[4] = {};
-    BuildRegisters(config, expected);
+    BuildRegisters(expected);
 
     Status status = WriteRegisters(expected);
     if (status != Status::Ok)
@@ -247,7 +396,14 @@ ADS1220::Status ADS1220::ApplyConfig(const Config& config)
         }
     }
 
-    return SendCommand(Cmd::START);
+    status = SendCommand(Cmd::START);
+    Converting_ = status == Status::Ok;
+    ClearSample();
+    if (Converting_)
+    {
+        ConversionStartedAt_ = HAL_GetTick();
+    }
+    return status;
 }
 
 ADS1220::Status ADS1220::ValidateConfig(const Config& config) const
@@ -271,7 +427,7 @@ ADS1220::Status ADS1220::ValidateConfig(const Config& config) const
         (mode > 2U) || (dr > 6U) || ((conversion != 0x00U) && (conversion != 0x04U)) ||
         (reference > 0xC0U) || ((reference & 0x3FU) != 0U) || (filter > 0x30U) ||
         ((filter & 0x0FU) != 0U) || (current > 7U) || (route1 > 6U) || (route2 > 6U) ||
-        !std::isfinite(config.reference_voltage) || (config.reference_voltage <= 0.0f))
+        (!std::isfinite(config.reference_voltage) || config.reference_voltage <= 0.0f))
     {
         return Status::InvalidArgument;
     }
@@ -312,33 +468,33 @@ ADS1220::Status ADS1220::FromHalStatus(HAL_StatusTypeDef status) const
     }
 }
 
-void ADS1220::BuildRegisters(const Config& config, uint8_t registers[4]) const
+void ADS1220::BuildRegisters(uint8_t registers[4]) const
 {
     // 配置寄存器 0：MUX[7:4]、GAIN[3:1]、PGA_BYPASS[0]。
 
-    registers[0] = static_cast<uint8_t>(config.input) |
-                   static_cast<uint8_t>(static_cast<uint8_t>(config.gain) << 1U) |
-                   static_cast<uint8_t>(config.bypass_pga ? 0x01U : 0x00U);
+    registers[0] = static_cast<uint8_t>(Config_.input) |
+                   static_cast<uint8_t>(static_cast<uint8_t>(Config_.gain) << 1U) |
+                   static_cast<uint8_t>(Config_.bypass_pga ? 0x01U : 0x00U);
 
     // 配置寄存器 1：DR[7:5]、MODE[4:3]、CM[2]、TS[1]、BCS[0]。
 
-    registers[1] = static_cast<uint8_t>(config.data_rate) |
-                   static_cast<uint8_t>(config.conversion_mode) |
-                   static_cast<uint8_t>(config.temperature_sensor ? 0x02U : 0x00U) |
-                   static_cast<uint8_t>(config.burn_out_sources ? 0x01U : 0x00U);
+    registers[1] = static_cast<uint8_t>(Config_.data_rate) |
+                   static_cast<uint8_t>(Config_.conversion_mode) |
+                   static_cast<uint8_t>(Config_.temperature_sensor ? 0x02U : 0x00U) |
+                   static_cast<uint8_t>(Config_.burn_out_sources ? 0x01U : 0x00U);
 
     // 配置寄存器 2：VREF[7:6]、FIR[5:4]、PSW[3]、IDAC[2:0]。
 
-    registers[2] = static_cast<uint8_t>(config.voltage_reference) |
-                   static_cast<uint8_t>(config.filter) |
-                   static_cast<uint8_t>(config.low_side_switch ? 0x08U : 0x00U) |
-                   static_cast<uint8_t>(config.idac_current);
+    registers[2] = static_cast<uint8_t>(Config_.voltage_reference) |
+                   static_cast<uint8_t>(Config_.filter) |
+                   static_cast<uint8_t>(Config_.low_side_switch ? 0x08U : 0x00U) |
+                   static_cast<uint8_t>(Config_.idac_current);
 
     // 配置寄存器 3：I1MUX[7:5]、I2MUX[4:2]、DRDYM[1]；保留位始终写 0。
 
-    registers[3] = static_cast<uint8_t>(static_cast<uint8_t>(config.idac1_route) << 5U) |
-                   static_cast<uint8_t>(static_cast<uint8_t>(config.idac2_route) << 2U) |
-                   static_cast<uint8_t>(config.dout_drdy_enabled ? 0x02U : 0x00U);
+    registers[3] = static_cast<uint8_t>(static_cast<uint8_t>(Config_.idac1_route) << 5U) |
+                   static_cast<uint8_t>(static_cast<uint8_t>(Config_.idac2_route) << 2U) |
+                   static_cast<uint8_t>(Config_.dout_drdy_enabled ? 0x02U : 0x00U);
 }
 
 void ADS1220::DecodeValue(const uint8_t data[3])
@@ -367,12 +523,15 @@ void ADS1220::DecodeValue(const uint8_t data[3])
         Temperature_ = static_cast<float>(temperature_code) * 0.03125f;
         Voltage_     = 0.0f;
         GainVoltage_ = 0.0f;
+        MonitorVoltage_ = 0.0f;
         return;
     }
 
     // 模拟输入模式下：VIN = Code × VREF / (Gain × 2^23)。
     // 选择内部参考时，芯片固定使用 2.048 V，不采用 Config_ 中的外部参考电压值。
-
+    // 系统监测绕过 PGA，不能扣除普通输入路径校准得到的偏移。
+    Temperature_ = 0.0f;
+    MonitorVoltage_ = 0.0f;
     const float reference_voltage = Config_.voltage_reference == VoltageReference::Internal2048
                                             ? 2.048f
                                             : Config_.reference_voltage;
@@ -381,10 +540,12 @@ void ADS1220::DecodeValue(const uint8_t data[3])
     {
     case (InputMux::ReferenceDiv4):
     case (InputMux::SupplyDiv4):
-        Voltage_     = static_cast<float>(RawValue_) * 2.048f / (AdcPositiveScale_);
-        GainVoltage_ = Voltage_ * 4;
+        Voltage_ = static_cast<float>(RawValue_) * 2.048f / AdcPositiveScale_;
+        MonitorVoltage_ = Voltage_ * 4.0f;
+        GainVoltage_ = 0.0f;
         break;
     default:
+        RawValue_ -= CodeOffset_;
         Voltage_     = static_cast<float>(RawValue_) * reference_voltage /
                        (static_cast<float>(GetGainValue()) * AdcPositiveScale_);
         GainVoltage_ = Voltage_ * GetGainValue();
@@ -395,4 +556,45 @@ uint16_t ADS1220::GetGainValue() const
 {
     // Gain 枚举保存 log2(倍率)，左移即可得到实际倍率且不需要查表。
     return static_cast<uint16_t>(1U << static_cast<uint8_t>(Config_.gain));
+}
+
+uint32_t ADS1220::GetConversionDelayMs() const
+{
+    // 数据率表：正常、占空比、Turbo；假定内部振荡器或 4.096 MHz 外部时钟。
+    // 周期向上取整，再留 10% 时钟裕量和 2 ms 启动时间；不依赖未接出的 DRDY。
+    static constexpr uint32_t periods_us[3][7] = {
+        {50000, 22223, 11112, 5715, 3031, 1667, 1000},
+        {200000, 88889, 44445, 22728, 12122, 6667, 4000},
+        {25000, 11112, 5556, 2858, 1516, 834, 500},
+    };
+    const uint8_t rate = static_cast<uint8_t>(Config_.data_rate);
+    const uint8_t mode = (rate >> 3U) & 0x03U;
+    const uint8_t dr = rate >> 5U;
+    return (periods_us[mode][dr] * 11U + 9999U) / 10000U + 2U;
+}
+
+void ADS1220::WaitForConversion() const
+{
+    // 无符号差值允许 HAL 毫秒 tick 跨越 UINT32_MAX 回绕。
+    const uint32_t elapsed = HAL_GetTick() - ConversionStartedAt_;
+    const uint32_t required = GetConversionDelayMs();
+    if (elapsed < required)
+    {
+        HAL_Delay(required - elapsed);
+    }
+}
+
+void ADS1220::ClearSample()
+{
+    RawValue_ = 0;
+    Voltage_ = 0.0f;
+    GainVoltage_ = 0.0f;
+    Temperature_ = 0.0f;
+    MonitorVoltage_ = 0.0f;
+    HasSample_ = false;
+}
+
+bool ADS1220::IsAnalogInput(const Config& config)
+{
+    return !config.temperature_sensor && static_cast<uint8_t>(config.input) < 0xC0U;
 }

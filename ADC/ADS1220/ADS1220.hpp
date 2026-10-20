@@ -4,9 +4,6 @@
  * @author  Wleaf.
  * @date    2026-09-18
  * @brief   针对ADS1220 24位ADC的封装
- *
- * Detailed description (optional).
- *
  */
 
 #pragma once
@@ -25,8 +22,8 @@
  * 硬件约束：
  * - SPI 必须配置为模式 1（CPOL = 0，CPHA = 1）。
  * - 当前类不控制 CS 引脚，调用期间 CS 必须由硬件或外部代码保持为有效低电平。
- * TODO:增加可选CS引脚
- * - Update() 不等待 DRDY，调用方应在数据就绪后调用，或按已配置的数据率周期调用。
+ * - Update() 不等待 ADC 转换；未到就绪时刻立即返回 NotReady，缓存保持不变。
+ * - 就绪判断基于 HAL 毫秒时基，支持内部振荡器或 4.096 MHz 外部时钟，不代替 DRDY 在线检测。
  * - 同一个对象不支持多线程并发调用。
  */
 class ADS1220
@@ -41,6 +38,7 @@ public:
         SpiBusy,               ///< SPI 外设当前忙。
         SpiTimeout,            ///< SPI 发送或接收超时。
         ConfigurationMismatch, ///< 配置寄存器读回值与写入值不一致。
+        NotReady,              ///< 尚未转换完成、已休眠或单次结果已读取。
     };
 
     /**
@@ -94,9 +92,9 @@ public:
     /**
      * @brief 工作模式与输出数据率的有效组合。
      *
-     * Normal 为正常模式（256khz），Duty 为 1:3
-     * 占空比低功耗模式，一个周期工作时间和休眠时间之比为1：4，Turbo 为高速模式（512khz）。
-     * 数值基于内部振荡器或 4.096 MHz 外部时钟；使用其他外部时钟时会同比缩放。
+     * Normal 为正常模式（256 kHz 调制器时钟），Duty 的工作时间占总周期的 1/4，
+     * Turbo 为高速模式（512 kHz 调制器时钟）。
+     * 数值基于内部振荡器或 4.096 MHz 外部时钟；当前转换等待仅支持这两种时钟。
      * 以下单位都是SPS（每秒采样次数）
      * _代表小数点
      */
@@ -191,27 +189,27 @@ public:
     /**
      * @brief ADS1220 完整工作配置。
      *
+     * 默认值保持现有工程行为：AIN0-AIN1 差分输入、128 倍增益、正常模式
+     * 330 SPS、连续转换、外部 REFP0/REFN0 参考、PGA 启用、IDAC 关闭。
      */
     struct Config
     {
-        InputMux         input;             ///< ADC 输入通道组合。
-        Gain             gain;              ///< 输入增益，参与满量程和电压换算。
-        DataRate         data_rate;         ///< 工作模式与输出数据率。
-        ConversionMode   conversion_mode;   ///< 单次或连续转换。
-        VoltageReference voltage_reference; ///< 硬件参考源。
-        float            reference_voltage; ///< 必须为有限正数；外部/电源参考的实际电压，内部参考固定使用 2.048 V。
-        FirFilter        filter;            ///< 20 SPS/5 SPS 下的工频抑制方式。
-        bool             bypass_pga;        ///< true 时旁路 PGA，仅允许 X1、X2、X4。
-        bool             temperature_sensor; ///< true 时测量芯片内部温度，而非模拟输入。
-        bool             burn_out_sources;   ///< 启用 10 µA 传感器开路/短路检测电流源。
-        bool             low_side_switch;    ///< START 时闭合、POWERDOWN 时断开内部低侧开关。
-        IdacCurrent      idac_current;       ///< 两路 IDAC 的公共电流设置。
-        IdacRoute        idac1_route;        ///< IDAC1 输出位置。
-        IdacRoute        idac2_route;        ///< IDAC2 输出位置。
-        bool             dout_drdy_enabled;  ///< 是否让 DOUT/DRDY 同步指示数据就绪。
+        InputMux         input              = InputMux::Ain0Ain1; ///< ADC 输入通道组合。
+        Gain             gain               = Gain::X128; ///< 输入增益，参与满量程和电压换算。
+        DataRate         data_rate          = DataRate::Normal330; ///< 工作模式与输出数据率。
+        ConversionMode   conversion_mode    = ConversionMode::Continuous; ///< 单次或连续转换。
+        VoltageReference voltage_reference  = VoltageReference::ExternalRef0; ///< 硬件参考源。
+        float            reference_voltage  = 5.0f; ///< 外部/电源参考实际电压，内部参考固定 2.048 V。
+        FirFilter        filter             = FirFilter::None; ///< 20 SPS/5 SPS 下的工频抑制方式。
+        bool             bypass_pga         = false; ///< true 时旁路 PGA，仅允许 X1、X2、X4。
+        bool             temperature_sensor = false; ///< true 时测量内部温度，而非模拟输入。
+        bool             burn_out_sources   = false; ///< 启用 10 µA 传感器检测电流源。
+        bool             low_side_switch    = false; ///< START 闭合、POWERDOWN 断开内部低侧开关。
+        IdacCurrent      idac_current       = IdacCurrent::Off; ///< 两路 IDAC 的公共电流设置。
+        IdacRoute        idac1_route         = IdacRoute::Disabled; ///< IDAC1 输出位置。
+        IdacRoute        idac2_route         = IdacRoute::Disabled; ///< IDAC2 输出位置。
+        bool             dout_drdy_enabled  = false; ///< DOUT/DRDY 是否同步指示数据就绪。
     };
-
-
 
     /**
      * @brief 使用完整配置构造 ADC。
@@ -220,21 +218,36 @@ public:
      */
     explicit ADS1220(SPI_HandleTypeDef* hspi, const Config& config);
 
-    /** @brief 复位芯片、校验配置、写入并读回寄存器，最后启动转换。 */
+    /**
+     * @brief 通过内部短接完成 ADC 自身偏移校准，Init() 会自动调用。
+     *
+     * 保持当前增益和参考源，短接 PGA 两端至电源中点，等待并平均 32 次独立转换，
+     * 再恢复原通道和转换模式。GetRawValue()、GetVoltage()、GetGainVoltage()
+     * 的后续结果均扣除偏移；失败时不更新原校准值，无法恢复硬件时禁止继续采样。
+     * @note 阻塞调用；Normal20 下约 2 秒，Duty5 下约 7.3 秒。
+     * @note 仅校准 ADC 本身，不消除传感器或外部放大电路的零点偏置。
+     * @note 使用内部振荡器或 4.096 MHz 外部时钟；非此频率需调整私有等待时间。
+     * @note Configure() 改变增益、PGA 旁路、数据率或参考源/电压后会自动重新校准。
+     */
+    Status Calibrate();
+
+    /** @brief 复位、校验配置并启动转换；模拟输入模式自动完成偏移校准后返回。 */
     Status Init();
 
     /**
-     * @brief 读取最新转换结果并更新缓存。
-     * @note 本函数不会等待 DRDY；读取成功后再调用 GetVoltage() 或 GetTemperature()。
+     * @brief 非等待式检查新转换；未就绪返回 NotReady，就绪才读 SPI 并更新缓存。
+     * @note 单次模式每个 Start() 只允许一次成功读取；休眠后需 Start() 再启动。
+     * @note NotReady 不改变缓存或 HasSample()；成功读取后 HasSample() 为 true。
+     * @note 不调用 HAL_Delay()，但就绪后仍使用带超时的同步 HAL SPI，并非 DMA 异步接口。
+     * @note 无 DRDY 时采用带裕量的毫秒时基判断；实际读频低于标称 SPS，尤其高速档。
      */
     Status Update();
 
     /**
      * @brief 应用一套完整配置。
-     * @note 初始化前调用仅校验并保存配置，成功返回 Ok，不访问硬件。
-     *       初始化后调用会立即写入、校验并重新启动转换，全部成功后才保存新配置。
-     *       参数校验失败不改变当前配置或初始化状态；硬件应用失败则保留旧配置并清除初始化状态，
-     *       必须重新调用 Init() 成功后才能继续采样。
+     * @note 初始化前只保存配置；运行时写入、校验并启动转换，必要时自动校准。
+     * @note 失败后恢复原配置并验证；恢复失败则禁止采样，必须重新 Init()。
+     * @note 配置成功后旧缓存清零；下次有效转换前 Update() 立即返回 NotReady。
      */
     Status Configure(const Config& config);
 
@@ -247,23 +260,32 @@ public:
     /** @brief 发送硬件复位命令；成功后对象变为未初始化状态。 */
     Status Reset();
 
-    /** @brief 修改增益；配置缓存及失败恢复规则同 Configure()。 */
+    /** @brief 修改增益；已初始化时立即重写并校验整套配置。 */
     Status SetGain(Gain gain);
 
     /**
-     * @brief 修改电压换算使用的参考电压，单位 V。
-     * @note 该值是软件换算参数，不会改变 ADS1220 的参考源选择。
-     * @return 非有限值或非正数返回 InvalidArgument 并保留原值，否则返回 Ok。
+     * @brief 修改外部/电源参考的实际电压（V），必须为正有限数。
+     * @note 不改变参考源选择；通过 Configure() 统一应用并处理校准和缓存失效。
      */
     Status SetVref(float Vref);
 
-    /** @brief 返回最近一次成功采样得到的 24 位有符号原始码。 */
+    /** @brief 返回最近一次有效采样的有符号码；模拟输入已扣除校准偏移。 */
     int32_t GetRawValue() const { return RawValue_; }
 
-    /** @brief 返回最近一次模拟输入采样换算出的差分电压，单位 V。 */
+    /** @brief 输入电压（V）；系统监测模式为被监测电压的 1/4，温度模式为零。 */
     float GetVoltage() const { return Voltage_; }
 
+    /** @brief 模拟输入电压 × 配置增益（V）；温度和系统监测模式为零。 */
     float GetGainVoltage() const { return GainVoltage_; }
+
+    /**
+     * @brief 系统监测还原后的电源/外部参考电压（V）；其他模式为零。
+     * @note ReferenceDiv4 / SupplyDiv4 结果统一通过此接口读取，不再复用 GetGainVoltage()。
+     */
+    float GetMonitorVoltage() const { return MonitorVoltage_; }
+
+    /** @brief 当前配置下是否已获得有效缓存；配置/复位/启动新转换后为 false。 */
+    bool HasSample() const { return HasSample_; }
 
     /** @brief 返回最近一次内部温度传感器采样值，单位 °C。 */
     float GetTemperature() const { return Temperature_; }
@@ -297,7 +319,7 @@ private:
     /** @brief 发送数据。 */
     Status SendData(uint8_t* pData, uint8_t size);
 
-    /** @brief 发送数据。 */
+    /** @brief 接收数据。 */
     Status ReadData(uint8_t* pData, uint8_t size);
 
     /** @brief 从配置寄存器 0 开始连续写入全部 4 个配置寄存器。 */
@@ -306,8 +328,8 @@ private:
     /** @brief 从配置寄存器 0 开始连续读取全部 4 个配置寄存器。 */
     Status ReadRegisters(uint8_t registers[4]);
 
-    /** @brief 编码、写入并读回校验候选配置，成功后发送 START。 */
-    Status ApplyConfig(const Config& config);
+    /** @brief 编码、写入并读回校验当前 Config_，成功后发送 START。 */
+    Status ApplyConfig();
 
     /** @brief 检查枚举范围及数据手册规定的配置组合限制。 */
     Status ValidateConfig(const Config& config) const;
@@ -315,14 +337,26 @@ private:
     /** @brief 将 STM32 HAL SPI 状态转换为公共 Status。 */
     Status FromHalStatus(HAL_StatusTypeDef status) const;
 
-    /** @brief 将高层配置编码为配置寄存器 0～3。 */
-    void BuildRegisters(const Config& config, uint8_t registers[4]) const;
+    /** @brief 将高层 Config_ 编码为配置寄存器 0～3。 */
+    void BuildRegisters(uint8_t registers[4]) const;
 
     /** @brief 解码 24 位补码 ADC 数据或左对齐的 14 位温度数据。 */
     void DecodeValue(const uint8_t data[3]);
 
     /** @brief 将 Gain 枚举转换为实际倍率 1、2、4……128。 */
     uint16_t GetGainValue() const;
+
+    /** @brief 按当前工作模式和数据率计算含裕量的单次转换等待时间，单位 ms。 */
+    uint32_t GetConversionDelayMs() const;
+
+    /** @brief 仅供校准内部等待新结果；正常 Update() 不调用。 */
+    void WaitForConversion() const;
+
+    /** @brief 清空测量缓存并使其失效。 */
+    void ClearSample();
+
+    /** @brief 普通差分/单端输入才使用 PGA 偏移校准。 */
+    static bool IsAnalogInput(const Config& config);
 
     // ADS1220 正向满量程对应 2^23 个码，用于双极性 24 位数据换算。
     static constexpr float AdcPositiveScale_ = 8388608.0f;
@@ -331,11 +365,16 @@ private:
     SPI_HandleTypeDef* hspi_ = nullptr;
 
     // 当前配置及最近一次有效测量结果均由对象内部保存，业务层只能只读访问。
-    Config  Config_      = {};
-    int32_t RawValue_    = 0;
-    float   Voltage_     = 0.0f;
-    float   Temperature_ = 0.0f;
-    Status  LastStatus_  = Status::NotInitialized;
-    bool    Initialized_ = false;
-    float   GainVoltage_ = 0.0f;
+    Config  Config_        = {};
+    int32_t RawValue_      = 0;
+    float   Voltage_       = 0.0f;
+    float   Temperature_   = 0.0f;
+    Status  LastStatus_    = Status::NotInitialized;
+    bool    Initialized_   = false;
+    float   GainVoltage_   = 0.0f;
+    int32_t CodeOffset_ = 0; ///< 内部短接平均偏移码；复位清零，成功校准后更新。
+    float MonitorVoltage_ = 0.0f;
+    bool HasSample_ = false;
+    bool Converting_ = false;
+    uint32_t ConversionStartedAt_ = 0;
 };
