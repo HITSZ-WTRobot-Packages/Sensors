@@ -1,0 +1,4 @@
+name = "ADS1220"
+pkgname = "SensorADC::ADS1220"
+version = "0.1.0"
+dependencies = ["stm32cubemx"]
