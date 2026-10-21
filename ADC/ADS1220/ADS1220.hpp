@@ -54,20 +54,20 @@ public:
      */
     enum class InputMux : uint8_t
     {
-        Ain0Ain1         = 0x00,
-        Ain0Ain2         = 0x10,
-        Ain0Ain3         = 0x20,
-        Ain1Ain2         = 0x30,
-        Ain1Ain3         = 0x40,
-        Ain2Ain3         = 0x50,
-        Ain1Ain0         = 0x60,
-        Ain3Ain2         = 0x70,
-        Ain0Avss         = 0x80,
-        Ain1Avss         = 0x90,
-        Ain2Avss         = 0xA0,
-        Ain3Avss         = 0xB0,
-        ReferenceDiv4    = 0xC0,
-        SupplyDiv4       = 0xD0,
+        Ain0Ain1 = 0x00,
+        Ain0Ain2 = 0x10,
+        Ain0Ain3 = 0x20,
+        Ain1Ain2 = 0x30,
+        Ain1Ain3 = 0x40,
+        Ain2Ain3 = 0x50,
+        Ain1Ain0 = 0x60,
+        Ain3Ain2 = 0x70,
+        Ain0Avss = 0x80,
+        Ain1Avss = 0x90,
+        Ain2Avss = 0xA0,
+        Ain3Avss = 0xB0,
+        ReferenceDiv4 = 0xC0,
+        SupplyDiv4 = 0xD0,
         ShortedMidSupply = 0xE0,
     };
 
@@ -79,13 +79,13 @@ public:
      */
     enum class Gain : uint8_t
     {
-        X1   = 0,
-        X2   = 1,
-        X4   = 2,
-        X8   = 3,
-        X16  = 4,
-        X32  = 5,
-        X64  = 6,
+        X1 = 0,
+        X2 = 1,
+        X4 = 2,
+        X8 = 3,
+        X16 = 4,
+        X32 = 5,
+        X64 = 6,
         X128 = 7,
     };
 
@@ -100,27 +100,27 @@ public:
      */
     enum class DataRate : uint8_t
     {
-        Normal20   = 0x00,
-        Normal45   = 0x20,
-        Normal90   = 0x40,
-        Normal175  = 0x60,
-        Normal330  = 0x80,
-        Normal600  = 0xA0,
+        Normal20 = 0x00,
+        Normal45 = 0x20,
+        Normal90 = 0x40,
+        Normal175 = 0x60,
+        Normal330 = 0x80,
+        Normal600 = 0xA0,
         Normal1000 = 0xC0,
-        Duty5      = 0x08,
-        Duty11_25  = 0x28,
-        Duty22_5   = 0x48,
-        Duty44     = 0x68,
-        Duty82_5   = 0x88,
-        Duty150    = 0xA8,
-        Duty250    = 0xC8,
-        Turbo40    = 0x10,
-        Turbo90    = 0x30,
-        Turbo180   = 0x50,
-        Turbo350   = 0x70,
-        Turbo660   = 0x90,
-        Turbo1200  = 0xB0,
-        Turbo2000  = 0xD0,
+        Duty5 = 0x08,
+        Duty11_25 = 0x28,
+        Duty22_5 = 0x48,
+        Duty44 = 0x68,
+        Duty82_5 = 0x88,
+        Duty150 = 0xA8,
+        Duty250 = 0xC8,
+        Turbo40 = 0x10,
+        Turbo90 = 0x30,
+        Turbo180 = 0x50,
+        Turbo350 = 0x70,
+        Turbo660 = 0x90,
+        Turbo1200 = 0xB0,
+        Turbo2000 = 0xD0,
     };
 
     /**
@@ -151,10 +151,10 @@ public:
 
     enum class FirFilter : uint8_t
     {
-        None          = 0x00,
+        None = 0x00,
         Reject50And60 = 0x10,
-        Reject50      = 0x20,
-        Reject60      = 0x30,
+        Reject50 = 0x20,
+        Reject60 = 0x30,
     };
 
     /**
@@ -164,12 +164,12 @@ public:
 
     enum class IdacCurrent : uint8_t
     {
-        Off    = 0,
-        Ua10   = 1,
-        Ua50   = 2,
-        Ua100  = 3,
-        Ua250  = 4,
-        Ua500  = 5,
+        Off = 0,
+        Ua10 = 1,
+        Ua50 = 2,
+        Ua100 = 3,
+        Ua250 = 4,
+        Ua500 = 5,
         Ua1000 = 6,
         Ua1500 = 7,
     };
@@ -178,12 +178,12 @@ public:
     enum class IdacRoute : uint8_t
     {
         Disabled = 0,
-        Ain0     = 1,
-        Ain1     = 2,
-        Ain2     = 3,
-        Ain3     = 4,
-        Refp0    = 5,
-        Refn0    = 6,
+        Ain0 = 1,
+        Ain1 = 2,
+        Ain2 = 3,
+        Ain3 = 4,
+        Refp0 = 5,
+        Refn0 = 6,
     };
 
     /**
@@ -194,21 +194,21 @@ public:
      */
     struct Config
     {
-        InputMux         input              = InputMux::Ain0Ain1; ///< ADC 输入通道组合。
-        Gain             gain               = Gain::X128; ///< 输入增益，参与满量程和电压换算。
-        DataRate         data_rate          = DataRate::Normal330; ///< 工作模式与输出数据率。
-        ConversionMode   conversion_mode    = ConversionMode::Continuous; ///< 单次或连续转换。
-        VoltageReference voltage_reference  = VoltageReference::ExternalRef0; ///< 硬件参考源。
-        float            reference_voltage  = 5.0f; ///< 外部/电源参考实际电压，内部参考固定 2.048 V。
-        FirFilter        filter             = FirFilter::None; ///< 20 SPS/5 SPS 下的工频抑制方式。
-        bool             bypass_pga         = false; ///< true 时旁路 PGA，仅允许 X1、X2、X4。
-        bool             temperature_sensor = false; ///< true 时测量内部温度，而非模拟输入。
-        bool             burn_out_sources   = false; ///< 启用 10 µA 传感器检测电流源。
-        bool             low_side_switch    = false; ///< START 闭合、POWERDOWN 断开内部低侧开关。
-        IdacCurrent      idac_current       = IdacCurrent::Off; ///< 两路 IDAC 的公共电流设置。
-        IdacRoute        idac1_route         = IdacRoute::Disabled; ///< IDAC1 输出位置。
-        IdacRoute        idac2_route         = IdacRoute::Disabled; ///< IDAC2 输出位置。
-        bool             dout_drdy_enabled  = false; ///< DOUT/DRDY 是否同步指示数据就绪。
+        InputMux input = InputMux::Ain0Ain1;                                 ///< ADC 输入通道组合。
+        Gain gain = Gain::X128;                                              ///< 输入增益，参与满量程和电压换算。
+        DataRate data_rate = DataRate::Normal330;                            ///< 工作模式与输出数据率。
+        ConversionMode conversion_mode = ConversionMode::Continuous;         ///< 单次或连续转换。
+        VoltageReference voltage_reference = VoltageReference::ExternalRef0; ///< 硬件参考源。
+        float reference_voltage = 5.0f;                                      ///< 外部/电源参考实际电压，内部参考固定 2.048 V。
+        FirFilter filter = FirFilter::None;                                  ///< 20 SPS/5 SPS 下的工频抑制方式。
+        bool bypass_pga = false;                                             ///< true 时旁路 PGA，仅允许 X1、X2、X4。
+        bool temperature_sensor = false;                                     ///< true 时测量内部温度，而非模拟输入。
+        bool burn_out_sources = false;                                       ///< 启用 10 µA 传感器检测电流源。
+        bool low_side_switch = false;                                        ///< START 闭合、POWERDOWN 断开内部低侧开关。
+        IdacCurrent idac_current = IdacCurrent::Off;                         ///< 两路 IDAC 的公共电流设置。
+        IdacRoute idac1_route = IdacRoute::Disabled;                         ///< IDAC1 输出位置。
+        IdacRoute idac2_route = IdacRoute::Disabled;                         ///< IDAC2 输出位置。
+        bool dout_drdy_enabled = false;                                      ///< DOUT/DRDY 是否同步指示数据就绪。
     };
 
     /**
@@ -216,7 +216,7 @@ public:
      * @param hspi STM32 HAL SPI 句柄，生命周期必须长于本对象且不能为 nullptr。
      * @param config 高层功能配置；构造阶段只保存，Init() 时才写入芯片。
      */
-    explicit ADS1220(SPI_HandleTypeDef* hspi, const Config& config);
+    explicit ADS1220(SPI_HandleTypeDef *hspi, const Config &config);
 
     /**
      * @brief 通过内部短接完成 ADC 自身偏移校准，Init() 会自动调用。
@@ -227,7 +227,8 @@ public:
      * @note 阻塞调用；Normal20 下约 2 秒，Duty5 下约 7.3 秒。
      * @note 仅校准 ADC 本身，不消除传感器或外部放大电路的零点偏置。
      * @note 使用内部振荡器或 4.096 MHz 外部时钟；非此频率需调整私有等待时间。
-     * @note Configure() 改变增益、PGA 旁路、数据率或参考源/电压后会自动重新校准。
+     * @note Configure() 改变增益、PGA 旁路、数据率或硬件参考源后会自动重新校准。
+     * @note 仅更新 reference_voltage 软件换算系数不会重新校准，偏移码保持不变。
      */
     Status Calibrate();
 
@@ -249,7 +250,7 @@ public:
      * @note 失败后恢复原配置并验证；恢复失败则禁止采样，必须重新 Init()。
      * @note 配置成功后旧缓存清零；下次有效转换前 Update() 立即返回 NotReady。
      */
-    Status Configure(const Config& config);
+    Status Configure(const Config &config);
 
     /** @brief 启动单次转换，或启动/同步连续转换。 */
     Status Start();
@@ -265,7 +266,7 @@ public:
 
     /**
      * @brief 修改外部/电源参考的实际电压（V），必须为正有限数。
-     * @note 不改变参考源选择；通过 Configure() 统一应用并处理校准和缓存失效。
+     * @note 不改变参考源选择、不触发偏移校准；仍通过 Configure() 应用并使缓存失效。。
      */
     Status SetVref(float Vref);
 
@@ -294,7 +295,7 @@ public:
     Status GetLastStatus() const { return LastStatus_; }
 
     /** @brief 只读访问当前高层配置；不能通过该引用修改对象。 */
-    const Config& GetConfig() const { return Config_; }
+    const Config &GetConfig() const { return Config_; }
 
     /** @brief Init() 是否已经完整成功。 */
     bool IsInitialized() const { return Initialized_; }
@@ -305,22 +306,22 @@ private:
     /** @brief ADS1220 SPI 命令字节，仅供驱动内部使用。 */
     enum class Cmd : uint8_t
     {
-        RESET     = 0x06,
-        START     = 0x08,
+        RESET = 0x06,
+        START = 0x08,
         POWERDOWN = 0x02,
-        RDATA     = 0x10,
-        RREG      = 0x23,
-        WREG      = 0x43,
+        RDATA = 0x10,
+        RREG = 0x23,
+        WREG = 0x43,
     };
 
     /** @brief 发送无附加数据的单字节命令。 */
     Status SendCommand(Cmd cmd);
 
     /** @brief 发送数据。 */
-    Status SendData(uint8_t* pData, uint8_t size);
+    Status SendData(uint8_t *pData, uint8_t size);
 
     /** @brief 接收数据。 */
-    Status ReadData(uint8_t* pData, uint8_t size);
+    Status ReadData(uint8_t *pData, uint8_t size);
 
     /** @brief 从配置寄存器 0 开始连续写入全部 4 个配置寄存器。 */
     Status WriteRegisters(const uint8_t registers[4]);
@@ -332,7 +333,7 @@ private:
     Status ApplyConfig();
 
     /** @brief 检查枚举范围及数据手册规定的配置组合限制。 */
-    Status ValidateConfig(const Config& config) const;
+    Status ValidateConfig(const Config &config) const;
 
     /** @brief 将 STM32 HAL SPI 状态转换为公共 Status。 */
     Status FromHalStatus(HAL_StatusTypeDef status) const;
@@ -356,22 +357,22 @@ private:
     void ClearSample();
 
     /** @brief 普通差分/单端输入才使用 PGA 偏移校准。 */
-    static bool IsAnalogInput(const Config& config);
+    static bool IsAnalogInput(const Config &config);
 
     // ADS1220 正向满量程对应 2^23 个码，用于双极性 24 位数据换算。
     static constexpr float AdcPositiveScale_ = 8388608.0f;
 
     // SPI 句柄由外部持有；本类不取得所有权，也不负责其初始化和销毁。
-    SPI_HandleTypeDef* hspi_ = nullptr;
+    SPI_HandleTypeDef *hspi_ = nullptr;
 
     // 当前配置及最近一次有效测量结果均由对象内部保存，业务层只能只读访问。
-    Config  Config_        = {};
-    int32_t RawValue_      = 0;
-    float   Voltage_       = 0.0f;
-    float   Temperature_   = 0.0f;
-    Status  LastStatus_    = Status::NotInitialized;
-    bool    Initialized_   = false;
-    float   GainVoltage_   = 0.0f;
+    Config Config_ = {};
+    int32_t RawValue_ = 0;
+    float Voltage_ = 0.0f;
+    float Temperature_ = 0.0f;
+    Status LastStatus_ = Status::NotInitialized;
+    bool Initialized_ = false;
+    float GainVoltage_ = 0.0f;
     int32_t CodeOffset_ = 0; ///< 内部短接平均偏移码；复位清零，成功校准后更新。
     float MonitorVoltage_ = 0.0f;
     bool HasSample_ = false;

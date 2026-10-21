@@ -197,12 +197,12 @@ ADS1220::Status ADS1220::Configure(const Config& config)
     const bool previous_has_sample = HasSample_;
     const bool previous_converting = Converting_;
 
+    // 偏移保存在码值域；reference_voltage 仅用于软件电压换算，不触发校准。
     const bool needs_calibration = IsAnalogInput(config) &&
         (!IsAnalogInput(previous_config) || config.gain != previous_config.gain ||
          config.bypass_pga != previous_config.bypass_pga ||
          config.data_rate != previous_config.data_rate ||
-         config.voltage_reference != previous_config.voltage_reference ||
-         config.reference_voltage != previous_config.reference_voltage);
+         config.voltage_reference != previous_config.voltage_reference);
 
     // 候选配置仅在本次非并发事务内部使用；失败后必须恢复硬件并验证。
     Config_ = config;
